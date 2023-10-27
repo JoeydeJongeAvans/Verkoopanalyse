@@ -1,61 +1,72 @@
-require('dotenv').config();
 const fs = require('fs');
-const parse = require('csv-parser');
-const { MongoClient } = require('mongodb');
+const mongoose = require('mongoose');
+const csv = require('csvtojson');
 
-const uri = process.env.MONGO_URL;
-const client = new MongoClient(uri, { useUnifiedTopology: true });
+mongoose.connect('mongodb+srv://vedr:Cr9TyZQC3Gl7nKmr@vedr.0yhgtpw.mongodb.net/projectJoey', { useNewUrlParser: true, useUnifiedTopology: true });
+const db = mongoose.connection;
 
-async function connectToDatabase() {
-  try {
-    await client.connect();
-    console.log('Connected to MongoDB');
-  } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-  }
-}
+db.on('error', console.error.bind(console, 'MongoDB-verbindingsfout:'));
+db.once('open', async function () {
+    console.log('Verbonden met MongoDB');
 
-async function disconnectFromDatabase() {
-  try {
-    await client.close();
-    console.log('Disconnected from MongoDB');
-  } catch (error) {
-    console.error('Error disconnecting from MongoDB:', error);
-  }
-}
+    const productSchema = new mongoose.Schema({
+      Productnaam: String,
+      Categorie: String,
+      Prijs: Number,
+      Voorraadniveau: Number
+  });
 
-async function insertData(collection, filePath, successMessage) {
-  const stream = fs.createReadStream(filePath).pipe(parse());
+    const transactieSchema = new mongoose.Schema({
+        Klant_ID: String,
+        Product: String,
+        Categorie: String,
+        Prijs: Number,
+        Datum: String, // Gewijzigd naar "Datum"
+    });
 
-  stream.on('data', async (data) => {
-    try {
-      await collection.insertOne(data);
-    } catch (error) {
-      console.error('Error inserting data:', error);
+    const klantSchema = new mongoose.Schema({
+        Klant_ID: String,
+        Naam: String,
+        Email: String, // Gewijzigd naar "Email"
+        Locatie: String
+    });
+
+    async function importTransactieCSVToMongoDB(csvFilePath, collectionName) {
+        const jsonArray = await csv().fromFile(csvFilePath);
+        const model = mongoose.model(collectionName, transactieSchema);
+        try {
+            const result = await model.insertMany(jsonArray);
+            console.log(`Gegevens uit ${csvFilePath} geïmporteerd in de collectie ${collectionName}`);
+        } catch (error) {
+            console.error(`Fout bij het importeren van ${csvFilePath}: ${error}`);
+        }
     }
-  });
 
-  stream.on('end', () => {
-    console.log(successMessage);
-  });
-}
 
-async function importData() {
-  await connectToDatabase();
+    async function importProductCSVToMongoDB(csvFilePath, collectionName) {
+      const jsonArray = await csv().fromFile(csvFilePath);
+      const model = mongoose.model(collectionName, productSchema);
+      try {
+          const result = await model.insertMany(jsonArray);
+          console.log(`Gegevens uit ${csvFilePath} geïmporteerd in de collectie ${collectionName}`);
+      } catch (error) {
+          console.error(`Fout bij het importeren van ${csvFilePath}: ${error}`);
+      }
+  }
 
-  const db = client.db('projectJoey');
+    async function importKlantCSVToMongoDB(csvFilePath, collectionName) {
+        const jsonArray = await csv().fromFile(csvFilePath);
+        const model = mongoose.model(collectionName, klantSchema);
+        try {
+            const result = await model.insertMany(jsonArray);
+            console.log(`Gegevens uit ${csvFilePath} geïmporteerd in de collectie ${collectionName}`);
+        } catch (error) {
+            console.error(`Fout bij het importeren van ${csvFilePath}: ${error}`);
+        }
+    }
 
-  const klantenCollection = db.collection('klanten');
-  const productenCollection = db.collection('producten');
-  const transactiesCollection = db.collection('transacties');
-
-  await Promise.all([
-    insertData(klantenCollection, 'data/klanten_data.csv', 'Klantgegevens ingevoerd.'),
-    insertData(productenCollection, 'data/producten_data.csv', 'Productgegevens ingevoerd.'),
-    insertData(transactiesCollection, 'data/transacties_data.csv', 'Transactiegegevens ingevoerd.'),
-  ]);
-
-  await disconnectFromDatabase();
-}
-
-importData();
+    // Roep de importeerfuncties aan voor de juiste bestanden en collecties
+    importTransactieCSVToMongoDB('transacties_data.csv', 'transacties');
+    importKlantCSVToMongoDB('klanten_data.csv', 'klanten');
+    importProductCSVToMongoDB('producten_data.csv', 'producten');
+});
