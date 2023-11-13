@@ -1,52 +1,43 @@
-require('dotenv').config();
-const { initializeApp } = require("firebase/app");
-const { getFirestore, collection, addDoc } = require("firebase/firestore");
 const fs = require('fs');
 const csv = require('csv-parser');
+const { collection, addDoc } = require('firebase/firestore');
 
-// Your Firebase configuration
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID
-};
+async function storeCSVsInFirestore(csvDataArray) {
+    for (const { filePath, collectionName } of csvDataArray) {
+        const csvData = [];
 
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
-// Initialize Firestore
-const db = getFirestore(app);
-
-// Function to store CSV data in Firestore
-async function storeCSVInFirestore(csvFilePath, collectionName) {
-    const csvData = [];
-    
-    // Read the CSV file
-    fs.createReadStream(csvFilePath)
-      .pipe(csv())
-      .on('data', (row) => {
-        csvData.push(row);
-      })
-      .on('end', () => {
-        const csvCollection = collection(db, collectionName);
-  
-        // Loop through the CSV data and add to Firestore
-        csvData.forEach((row) => {
-          addDoc(csvCollection, row)
-            .then((docRef) => {
-              console.log(`CSV data added to collection ${collectionName} with ID: `, docRef.id);
-            })
-            .catch((error) => {
-              console.error(`Error adding CSV data to collection ${collectionName}: `, error);
-            });
+        // Read the CSV file
+        await new Promise((resolve) => {
+            fs.createReadStream(filePath)
+                .pipe(csv())
+                .on('data', (row) => {
+                    csvData.push(row);
+                })
+                .on('end', () => {
+                    resolve();
+                });
         });
-      });
-  }
-  
-  // Example usage:
-  storeCSVInFirestore('klanten_data.csv', 'klanten'); // Replace 'your_csv_file.csv' with your CSV file path and 'csvData' with the collection name.
+
+        const csvCollection = collection(db, collectionName);
+
+        // Loop through the CSV data and add to Firestore
+        for (const row of csvData) {
+            try {
+                const docRef = await addDoc(csvCollection, row);
+                console.log(`CSV data added to collection ${collectionName} with ID: `, docRef.id);
+            } catch (error) {
+                console.error(`Error adding CSV data to collection ${collectionName}: `, error);
+            }
+        }
+    }
+}
+
+// Example usage:
+const csvDataArray = [
+    { filePath: 'klanten_data.csv', collectionName: 'klanten' },
+    { filePath: 'producten_data.csv', collectionName: 'producten' },
+    { filePath: 'transacties_data.csv', collectionName: 'transacties' }
+    // Add more entries as needed
+];
+
+storeCSVsInFirestore(csvDataArray);
